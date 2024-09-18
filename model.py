@@ -6,7 +6,7 @@ class CNN_RNN_Model(nn.Module):
         super(CNN_RNN_Model, self).__init__()
         
         self.first_cnn_block = nn.Sequential(
-            nn.Conv2d(in_channels=2, out_channels=64, kernel_size=(17, 2), stride=1, padding=(8, 0)),
+            nn.Conv2d(in_channels=2, out_channels=64, kernel_size=(17, 1), stride=1, padding=(8, 0)),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=(2, 1)),
@@ -15,7 +15,7 @@ class CNN_RNN_Model(nn.Module):
 
         self.additional_cnn_blocks = nn.ModuleList([
             nn.Sequential(
-                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(17, 2), stride=1, padding=(8, 0)),
+                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(17, 1), stride=1, padding=(8, 0)),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=(2, 1)),
@@ -25,8 +25,7 @@ class CNN_RNN_Model(nn.Module):
         
         self.flatten = nn.Flatten()
 
-        self.gru_input_size = 64 * 11 * 2
-
+        self.gru_input_size = 64 * 11 * 1
         self.gru = nn.GRU(input_size=self.gru_input_size, hidden_size=4, num_layers=2, bidirectional=True, batch_first=True, dropout=0.1)
         
         self.fc = nn.Linear(4 * 2, 1)
