@@ -8,6 +8,8 @@ from segmentation import load_apnea_data
 from model import CNN_RNN_Model
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 def split_csv_files(data_dir, train_ratio=0.6, val_ratio=0.2):
     csv_files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.csv')]
     
@@ -33,15 +35,15 @@ def create_dataloaders(train_files, val_files, test_files, batch_size=32):
 
 
 class ApneaTrainer:
-    def __init__(self, model, train_loader, val_loader, test_loader=None, num_epochs=30):
-        self.model = model
+    def __init__(self, model, train_loader, val_loader, test_loader=None, num_epochs=50):
+        self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
         self.num_epochs = num_epochs
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.criterion = torch.nn.HuberLoss()
-        self.linear_reg = torch.nn.Linear(1, 1)
+        self.linear_reg = torch.nn.Linear(1, 1).to(device) 
         
         # 10 epoch 동안 validation loss가 개선되지 않으면 감소
         self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=10, verbose=True)
@@ -57,6 +59,7 @@ class ApneaTrainer:
             self.model.train()
             running_loss = 0.0
             for inputs, labels in self.train_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
                 self.optimizer.zero_grad()
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs.squeeze(), labels)
@@ -73,14 +76,14 @@ class ApneaTrainer:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 self.early_stopping_counter = 0
-                print(f"Validation loss improved at epoch {epoch+1}.")
+                print(f"Validation loss improved at epoch {epoch+1}")
                 self.save_model("best_model.pth")
             else:
                 self.early_stopping_counter += 1
-                print(f"No improvement in validation loss for {self.early_stopping_counter} epochs.")
+                print(f"No improvement in validation loss for {self.early_stopping_counter} epochs")
                 
             if self.early_stopping_counter >= self.early_stopping_patience:
-                print(f"Early stopping triggered at epoch {epoch+1}.")
+                print(f"Early stopping triggered at epoch {epoch+1}")
                 break
 
     def validate(self):
@@ -88,6 +91,7 @@ class ApneaTrainer:
         total_loss = 0.0
         with torch.no_grad():
             for inputs, labels in self.val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs.squeeze(), labels)
                 total_loss += loss.item()
@@ -104,6 +108,7 @@ class ApneaTrainer:
         
         with torch.no_grad():
             for inputs, labels in self.test_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
                 outputs = self.model(inputs)
                 predicted_ahi = self.calculate_ahi(outputs)
                 total_ahi += predicted_ahi
@@ -158,7 +163,7 @@ class ApneaTrainer:
 
 
 def train_and_test_model(train_loader, val_loader, test_loader):
-    model = CNN_RNN_Model()
+    model = CNN_RNN_Model().to(device)
     trainer = ApneaTrainer(model, train_loader, val_loader, test_loader)
     
     trainer.train()
