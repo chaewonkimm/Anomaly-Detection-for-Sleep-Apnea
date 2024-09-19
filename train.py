@@ -27,15 +27,15 @@ def split_csv_files(data_dir, train_ratio=0.6, val_ratio=0.2):
 
 
 def create_dataloaders(train_files, val_files, test_files, batch_size=32):
-    train_loader = load_apnea_data(train_files, batch_size=batch_size, shuffle=True)
-    val_loader = load_apnea_data(val_files, batch_size=batch_size, shuffle=False)
-    test_loader = load_apnea_data(test_files, batch_size=batch_size, shuffle=False)
+    train_loader = load_apnea_data(train_files, batch_size=batch_size, shuffle=True, return_filename=False)
+    val_loader = load_apnea_data(val_files, batch_size=batch_size, shuffle=False, return_filename=False)
+    test_loader = load_apnea_data(test_files, batch_size=batch_size, shuffle=False, return_filename=True)
     
     return train_loader, val_loader, test_loader
 
 
 class ApneaTrainer:
-    def __init__(self, model, train_loader, val_loader, test_loader=None, num_epochs=50):
+    def __init__(self, model, train_loader, val_loader, test_loader=None, num_epochs=5):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -100,45 +100,58 @@ class ApneaTrainer:
 
     def test(self):
         self.model.eval()
-        total_ahi = 0.0
-        count = 0
-        predicted_classes = []
+        filewise_true_ahi = {}
+        filewise_predicted_ahi = {}
         true_classes = []
-        true_ahi_values = []
-        
+        predicted_classes = []
+
         with torch.no_grad():
-            for inputs, labels in self.test_loader:
+            for inputs, labels, filenames in self.test_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = self.model(inputs)
-                predicted_ahi = self.calculate_ahi(outputs)
-                total_ahi += predicted_ahi
-                count += 1
+                batch_size = inputs.size(0)
 
-                true_ahi = labels.sum().item() / (len(labels) / 10.0 / 60.0) ##!
-                true_ahi_values.append(true_ahi)
+                for i in range(batch_size):
+                    filename = filenames[i]
+                    y_pred = outputs[i].item()
+                    y_true = labels[i].item()
 
-                true_class = self.classify_ahi(true_ahi)
-                predicted_class = self.classify_ahi(predicted_ahi.item())
-                
-                true_classes.append(true_class)
-                predicted_classes.append(predicted_class)
+                    if filename not in filewise_true_ahi:
+                        filewise_true_ahi[filename] = []
+                        filewise_predicted_ahi[filename] = []
 
-        cm = confusion_matrix(true_classes, predicted_classes, labels=["No OSA", "Mild OSA", "Moderate OSA", "Severe OSA"])
+                    filewise_true_ahi[filename].append(y_true)
+                    filewise_predicted_ahi[filename].append(y_pred)
+
+        for filename in filewise_true_ahi.keys():
+            N = len(filewise_true_ahi[filename])
+            #print(filewise_true_ahi[filename])
+
+            true_ahi_values = [y_true / 0.5 for y_true in filewise_true_ahi[filename]]
+            predicted_ahi_values = [y_pred / 0.5 for y_pred in filewise_predicted_ahi[filename]]
+
+            true_ahi = sum(true_ahi_values) / N
+            predicted_ahi = sum(predicted_ahi_values) / N
+
+            print(f"Filename: {filename}, True AHI: {true_ahi}")
+
+            true_class = self.classify_ahi(true_ahi)
+            print(f"Filename: {filename}, True Class: {true_class}")
+            predicted_class = self.classify_ahi(predicted_ahi)
+
+            true_classes.append(true_class)
+            predicted_classes.append(predicted_class)
+
+        labels_order = ["No OSA", "Mild OSA", "Moderate OSA", "Severe OSA"]
+        cm = confusion_matrix(true_classes, predicted_classes, labels=labels_order)
         print("Confusion Matrix:")
         print(cm)
 
-        # Cohen's Kappa
-        kappa = cohen_kappa_score(true_classes, predicted_classes, labels=["No OSA", "Mild OSA", "Moderate OSA", "Severe OSA"])
+        kappa = cohen_kappa_score(true_classes, predicted_classes, labels=labels_order)
         print(f"Cohen's Kappa: {kappa}")
 
-        # 4-class accuracy
-        total_correct = sum(cm[i][i] for i in range(len(cm)))
-        total_samples = cm.sum()
-        acc4 = total_correct / total_samples
+        acc4 = cm.trace() / cm.sum()
         print(f"4-Class Accuracy (Acc4): {acc4}")
-
-        corrected_ahi = self.linear_reg(total_ahi / count)
-        return corrected_ahi
 
     def classify_ahi(self, ahi_value):
         if ahi_value < 1:
@@ -149,11 +162,6 @@ class ApneaTrainer:
             return "Moderate OSA"
         else:
             return "Severe OSA"
-            
-
-    def calculate_ahi(self, predicted_values, segment_duration=0.5):
-        ahi = predicted_values / segment_duration
-        return ahi.mean()
 
     def save_model(self, path='model.pth'):
         torch.save(self.model.state_dict(), path)
