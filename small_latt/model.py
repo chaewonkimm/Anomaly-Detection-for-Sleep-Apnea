@@ -1,5 +1,40 @@
 import torch
 import torch.nn as nn
+import math
+
+class LocalAttention(nn.Module):
+    def __init__(self, hidden_size, window_size):
+        super(LocalAttention, self).__init__()
+        self.hidden_size = hidden_size
+        self.window_size = window_size
+        self.query_projection = nn.Linear(hidden_size, hidden_size)
+        self.key_projection = nn.Linear(hidden_size, hidden_size)
+        self.value_projection = nn.Linear(hidden_size, hidden_size)
+        self.scale = math.sqrt(hidden_size)
+        
+    def forward(self, x):
+        batch_size, seq_len, hidden_size = x.size()
+        
+        queries = self.query_projection(x)
+        keys = self.key_projection(x)
+        values = self.value_projection(x)
+        
+        attention_scores = torch.matmul(queries, keys.transpose(-2, -1)) / self.scale 
+        
+        mask = torch.zeros(seq_len, seq_len).to(x.device)
+        mask.fill_(float('-inf'))
+        for i in range(seq_len):
+            start = max(0, i - self.window_size)
+            end = min(seq_len, i + self.window_size + 1)
+            mask[i, start:end] = 0
+        
+        attention_scores = attention_scores + mask.unsqueeze(0)
+        
+        attention_weights = torch.softmax(attention_scores, dim=-1) 
+        
+        context = torch.matmul(attention_weights, values)
+        context_vector = context.mean(dim=1)
+        return context_vector
 
 class CNN_RNN_Model(nn.Module):
     def __init__(self):
@@ -28,13 +63,9 @@ class CNN_RNN_Model(nn.Module):
         self.gru_input_size = 64 * 11 * 1
         self.gru = nn.GRU(input_size=self.gru_input_size, hidden_size=4, num_layers=2, bidirectional=True, batch_first=True, dropout=0.1)
         
-        #self.fc = nn.Linear(4 * 2, 1)
-        self.attention_fc = nn.Linear(4 * 2, 1)
-
-        self.fc = nn.Sequential(
-            nn.Linear(4 * 2, 1),
-            nn.ReLU()
-        )
+        self.local_attention = LocalAttention(hidden_size=8, window_size=2)
+        
+        self.fc = nn.Linear(8, 1)
 
     def forward(self, x):
         batch_size, epochs, samples, channels = x.size()
@@ -54,9 +85,7 @@ class CNN_RNN_Model(nn.Module):
         
         gru_out, _ = self.gru(cnn_out)
 
-        attn_scores = torch.tanh(self.attention_fc(gru_out))  # [batch_size, epochs, 1]
-        attn_weights = torch.softmax(attn_scores, dim=1)
-        context_vector = torch.sum(attn_weights * gru_out, dim=1)
+        attn_out = self.local_attention(gru_out)
 
-        output = self.fc(context_vector)  # [batch_size, 1]
+        output = self.fc(attn_out)
         return output
