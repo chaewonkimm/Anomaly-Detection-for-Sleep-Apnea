@@ -6,7 +6,6 @@ import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.data import DataLoader
 from segmentation import load_apnea_data
 from model import CNN_RNN_Model
-#from model import CNN_Transformer_Model
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -40,7 +39,7 @@ def create_dataloaders(train_files, val_files, test_files, batch_size=32):
 
 
 class ApneaTrainer:
-    def __init__(self, model, train_loader, val_loader, test_loader=None, num_epochs=200):  # num_epochs=200
+    def __init__(self, model, train_loader, val_loader, test_loader=None, num_epochs=350):  # num_epochs=200
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
