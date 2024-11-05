@@ -5,23 +5,13 @@ class CNN_RNN_Model(nn.Module):
     def __init__(self):
         super(CNN_RNN_Model, self).__init__()
         
-        self.first_cnn_block = nn.Sequential(
+        self.cnn_block = nn.Sequential(
             nn.Conv2d(in_channels=2, out_channels=64, kernel_size=(17, 1), stride=1, padding=(8, 0)),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=(2, 1)),
             nn.Dropout(0.1)
         )
-
-        self.additional_cnn_blocks = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(17, 1), stride=1, padding=(8, 0)),
-                nn.BatchNorm2d(64),
-                nn.ReLU(),
-                nn.MaxPool2d(kernel_size=(2, 1)),
-                nn.Dropout(0.1)
-            ) for _ in range(7)
-        ])
         
         self.flatten = nn.Flatten()
 
@@ -36,11 +26,7 @@ class CNN_RNN_Model(nn.Module):
         cnn_out = []
         for i in range(epochs):
             epoch_data = x[:, i, :, :].permute(0, 2, 1).unsqueeze(3)
-            epoch_data = self.first_cnn_block(epoch_data)
-            
-            for idx, cnn_block in enumerate(self.additional_cnn_blocks):
-                epoch_data = cnn_block(epoch_data)
-
+            epoch_data = self.cnn_block(epoch_data)
             epoch_data = self.flatten(epoch_data)
             cnn_out.append(epoch_data)
 
